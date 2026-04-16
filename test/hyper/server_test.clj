@@ -620,4 +620,26 @@
                                     [:div "ok"])}]]
           handler    (server/create-handler routes app-state* {:context {:db db-conn}})]
       (handler {:uri "/" :request-method :get})
+      (is (= db-conn (:db @received*)))))
+
+  (testing ":context is available on SSE re-render (no base-req, synthetic request path)"
+    ;; This covers the bug where SSE re-renders built a synthetic request from {}
+    ;; and never included :hyper/context, so (h/context :key) returned nil on
+    ;; any render triggered by state changes or navigation.
+    (let [db-conn    {:pool :sse-pool}
+          app-state* (atom (state/init-state))
+          received*  (atom nil)
+          routes     [["/" {:name :home
+                            :get  (fn [req]
+                                    (reset! received* (:hyper/context req))
+                                    [:div "ok"])}]]
+          _handler   (server/create-handler routes app-state* {:context {:db db-conn}})]
+      ;; Simulate an SSE re-render: render-tab called without a base-req
+      (state/get-or-create-tab! app-state* "s1" "t1")
+      (render/register-render-fn! app-state* "t1"
+                                  (fn [req]
+                                    (reset! received* (:hyper/context req))
+                                    [:div "re-rendered"]))
+      (state/set-tab-route! app-state* "t1" {:name :home :path "/" :path-params {} :query-params {}})
+      (render/render-tab app-state* "s1" "t1")  ;; no base-req — SSE path
       (is (= db-conn (:db @received*))))))

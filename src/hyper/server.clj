@@ -532,7 +532,8 @@
          _                                        (swap! app-state* assoc
                                                          :routes-source routes
                                                          :global-watches (vec watches)
-                                                         :head head)
+                                                         :head head
+                                                         :context context)
          initial-routes                           (if (var? routes) @routes routes)
          initial-handler                          (build-ring-handler initial-routes app-state* page-wrapper system-routes)
          handler                                  (if (var? routes)

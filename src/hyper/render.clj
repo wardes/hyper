@@ -171,13 +171,15 @@
                          stored-render-fn)
            url         (when route
                          (state/build-url (:path route) (:query-params route)))
+           context     (get @app-state* :context)
            req         (cond-> (or base-req {})
-                         true   (assoc :hyper/session-id session-id
-                                       :hyper/tab-id     tab-id
-                                       :hyper/app-state  app-state*)
-                         router (assoc :hyper/router router)
-                         route  (assoc :hyper/route route)
-                         true   (dissoc :reitit.core/match))]
+                         true    (assoc :hyper/session-id session-id
+                                        :hyper/tab-id     tab-id
+                                        :hyper/app-state  app-state*)
+                         router  (assoc :hyper/router router)
+                         route   (assoc :hyper/route route)
+                         context (assoc :hyper/context context)
+                         true    (dissoc :reitit.core/match))]
        (push-thread-bindings {#'context/*request*    req
                               #'context/*action-idx* (atom 0)})
        (try
