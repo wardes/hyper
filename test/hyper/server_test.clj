@@ -39,7 +39,7 @@
                        {:status 200
                         :body   (str "session: " (:hyper/session-id req)
                                      " tab: " (:hyper/tab-id req))})
-          wrapped    ((server/wrap-hyper-context app-state*) handler)
+          wrapped    ((server/wrap-hyper-context app-state* nil) handler)
           req        {}
           response   (wrapped req)]
 
@@ -56,7 +56,7 @@
           handler             (fn [req]
                                 {:status 200
                                  :body   (str "session: " (:hyper/session-id req))})
-          wrapped             ((server/wrap-hyper-context app-state*) handler)
+          wrapped             ((server/wrap-hyper-context app-state* nil) handler)
           req                 {:cookies {"hyper-session" {:value existing-session-id}}}
           response            (wrapped req)]
 
@@ -69,7 +69,7 @@
           handler    (fn [req]
                        {:status 200
                         :body   (str "tab: " (:hyper/tab-id req))})
-          wrapped    ((server/wrap-hyper-context app-state*) handler)
+          wrapped    ((server/wrap-hyper-context app-state* nil) handler)
           req        {:query-params {"tab-id" "tab-from-query"}}
           response   (wrapped req)]
 
@@ -591,3 +591,33 @@
         (is (some? session-id))
         (is (= {:token "test-token-123"}
                (get-in @app-state* [:sessions session-id :data :user])))))))
+
+(deftest test-context-injection
+  (testing ":context map is available on request as :hyper/context"
+    (let [db-conn    {:pool :fake-db}
+          app-state* (atom (state/init-state))
+          ctx        {:db db-conn :config {:debug true}}
+          handler    (fn [req] {:status 200 :body (:hyper/context req)})
+          wrapped    ((server/wrap-hyper-context app-state* ctx) handler)
+          response   (wrapped {})]
+      (is (= db-conn (:db (:body response))))
+      (is (= {:debug true} (:config (:body response))))))
+
+  (testing ":context nil does not break requests"
+    (let [app-state* (atom (state/init-state))
+          handler    (fn [req] {:status 200 :body (:hyper/context req)})
+          wrapped    ((server/wrap-hyper-context app-state* nil) handler)
+          response   (wrapped {})]
+      (is (nil? (:body response)))))
+
+  (testing "create-handler passes :context into every request"
+    (let [db-conn    {:pool :test-pool}
+          app-state* (atom (state/init-state))
+          received*  (atom nil)
+          routes     [["/" {:name :home
+                            :get  (fn [req]
+                                    (reset! received* (:hyper/context req))
+                                    [:div "ok"])}]]
+          handler    (server/create-handler routes app-state* {:context {:db db-conn}})]
+      (handler {:uri "/" :request-method :get})
+      (is (= db-conn (:db @received*))))))

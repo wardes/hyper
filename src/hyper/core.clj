@@ -3,6 +3,7 @@
 
    Provides:
    - global-cursor, session-cursor, tab-cursor, and path-cursor for state management
+   - context for accessing app-level resources (db connections, config, etc.)
    - action macro for handling user interactions
    - navigate function for SPA navigation
    - watch! for observing external state sources
@@ -17,6 +18,20 @@
             [hyper.utils :as utils]
             [hyper.watch :as watch]
             [reitit.core :as reitit]))
+
+(defn context
+  "Returns the app context map or a specific value from it.
+   Available inside render functions and actions (where the request context is bound).
+
+   Call with no args to get the full context map. Call with a key to get a specific value.
+
+   Example:
+     (def handler (create-handler routes :context {:db my-db :config my-config}))
+
+     ;; In a render fn or action:
+     (let [db (h/context :db)] ...)"
+  ([] (:hyper/context *request*))
+  ([k] (get (:hyper/context *request*) k)))
 
 (defn global-cursor
   "Create a cursor to global state at the given path.
@@ -365,6 +380,9 @@
                           route's render function runs, with the request context bound.
                           Use this to restore session state from long-lived cookies
                           (e.g. a JWT auth token). Has full access to cursor functions.
+   - :context           — Map of app-level resources (database connections, config, etc.)
+                          injected into every request as :hyper/context. Access inside
+                          render fns and actions via (h/context :key).
 
    Example:
      (def routes
@@ -391,7 +409,7 @@
      (def app (start! handler {:port 3000}))
      ;; Later...
      (stop! app)"
-  [routes & {:keys [app-state head static-resources static-dir watches datastar-script before-render]
+  [routes & {:keys [app-state head static-resources static-dir watches datastar-script before-render context]
              :or   {app-state       (atom (state/init-state))
                     datastar-script server/default-datastar-script}}]
   (server/create-handler routes app-state
@@ -400,7 +418,8 @@
                           :static-resources static-resources
                           :static-dir       static-dir
                           :watches          watches
-                          :before-render    before-render}))
+                          :before-render    before-render
+                          :context          context}))
 
 (defn start!
   "Start the hyper application server.

@@ -137,8 +137,8 @@
      :thread          thread}))
 
 (defn wrap-hyper-context
-  "Middleware that adds session-id and tab-id to the request."
-  [app-state*]
+  "Middleware that adds session-id, tab-id, and app context to the request."
+  [app-state* context]
   (fn [handler]
     (fn [req]
       (let [cookies          (get req :cookies {})
@@ -150,7 +150,8 @@
             req              (assoc req
                                     :hyper/session-id session-id
                                     :hyper/tab-id tab-id
-                                    :hyper/app-state app-state*)]
+                                    :hyper/app-state app-state*
+                                    :hyper/context context)]
 
         ;; Add hyper context to telemere for all downstream logging
         (t/with-ctx+ {:hyper/session-id session-id
@@ -519,7 +520,7 @@
    Hyper will wrap them to provide full HTML responses and SSE connections."
   ([routes app-state*]
    (create-handler routes app-state* {:datastar-script (default-datastar-script)}))
-  ([routes app-state* {:keys [watches head] :as opts}]
+  ([routes app-state* {:keys [watches head context] :as opts}]
    (let [page-wrapper                             (page-handler app-state* opts)
          system-routes                            [["/hyper/events" {:get (sse-events-handler app-state*)}]
                                                    ["/hyper/actions" {:post (action-handler app-state*)}]
@@ -555,7 +556,7 @@
                                                     initial-handler)
          handler-with-mw
          (-> handler
-             ((wrap-hyper-context app-state*))
+             ((wrap-hyper-context app-state* context))
              (br/wrap-brotli)
              (keyword-params/wrap-keyword-params)
              (params/wrap-params)
