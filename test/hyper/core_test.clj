@@ -173,6 +173,64 @@
           ;; Render fn should be swapped
           (is (= about-fn (get-in @app-state* [:tabs tab-id :render-fn]))))))))
 
+(deftest test-navigate!
+  (testing "navigate! throws when called outside request context"
+    (is (thrown? Exception (hy/navigate! :home))))
+
+  (testing "navigate! updates route and render-fn state"
+    (let [home-fn    (fn [_] [:div "Home"])
+          about-fn   (fn [_] [:div "About"])
+          routes     [["/" {:name :home :get home-fn}]
+                      ["/about" {:name :about :get about-fn}]]
+          ctx        (make-test-context routes)
+          app-state* (:hyper/app-state ctx)
+          tab-id     (:hyper/tab-id ctx)]
+
+      (testing "updates route name and path"
+        (binding [context/*request* ctx]
+          (hy/navigate! :about))
+        (let [route (state/get-tab-route app-state* tab-id)]
+          (is (= :about (:name route)))
+          (is (= "/about" (:path route)))))
+
+      (testing "updates render-fn to target route's render fn"
+        (binding [context/*request* ctx]
+          (hy/navigate! :home))
+        (is (= home-fn (get-in @app-state* [:tabs tab-id :render-fn]))))))
+
+  (testing "navigate! with path params resolves path correctly"
+    (let [routes     [["/" {:name :home :get (fn [_] [:div "Home"])}]
+                      ["/users/:id" {:name :user-profile :get (fn [_] [:div "User"])}]]
+          ctx        (make-test-context routes)
+          app-state* (:hyper/app-state ctx)
+          tab-id     (:hyper/tab-id ctx)]
+      (binding [context/*request* ctx]
+        (hy/navigate! :user-profile {:id "123"}))
+      (let [route (state/get-tab-route app-state* tab-id)]
+        (is (= :user-profile (:name route)))
+        (is (= "/users/123" (:path route)))
+        (is (= {:id "123"} (:path-params route))))))
+
+  (testing "navigate! with query params stores them in route"
+    (let [routes     [["/" {:name :home :get (fn [_] [:div "Home"])}]]
+          ctx        (make-test-context routes)
+          app-state* (:hyper/app-state ctx)
+          tab-id     (:hyper/tab-id ctx)]
+      (binding [context/*request* ctx]
+        (hy/navigate! :home nil {:q "clojure"}))
+      (let [route (state/get-tab-route app-state* tab-id)]
+        (is (= {:q "clojure"} (:query-params route))))))
+
+  (testing "navigate! with unknown route does nothing"
+    (let [routes     [["/" {:name :home :get (fn [_] [:div "Home"])}]]
+          ctx        (make-test-context routes)
+          app-state* (:hyper/app-state ctx)
+          tab-id     (:hyper/tab-id ctx)
+          before     (get-in @app-state* [:tabs tab-id :route])]
+      (binding [context/*request* ctx]
+        (hy/navigate! :nonexistent))
+      (is (= before (get-in @app-state* [:tabs tab-id :route]))))))
+
 (deftest test-set-cookie
   (testing "throws when called outside an action context"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside an action context"

@@ -306,6 +306,45 @@
                (when title
                  (str " document.title = '" escaped-title "'")))})))))
 
+(defn navigate!
+  "Navigate to a named route from within an action handler.
+   Updates the current tab's route and render function, triggering an SSE
+   re-render that pushes the new page content to the client. The browser
+   URL bar is updated via replaceState (modifying the current history entry,
+   not creating a new one — suitable for post-action redirects).
+
+   Must be called from within an action body (requires request context).
+
+   route-name:   Keyword name of the target route
+   params:       Optional map of path parameters (e.g. {:id \"123\"})
+   query-params: Optional map of query parameters (e.g. {:q \"search\"})
+
+   Example:
+     ;; Post-login redirect
+     (action
+       (when (authenticate! $form-data)
+         (navigate! :dashboard)))
+
+     ;; Navigate with path params
+     (action
+       (navigate! :user-profile {:id user-id} {:tab \"activity\"}))"
+  ([route-name]
+   (navigate! route-name nil nil))
+  ([route-name params]
+   (navigate! route-name params nil))
+  ([route-name params query-params]
+   (let [{:keys [tab-id app-state* router]} (context/require-context! "navigate!")
+         route-index (routes/live-route-index app-state*)
+         render-fn   (routes/find-render-fn route-index route-name)]
+     (when render-fn
+       (render/register-render-fn! app-state* tab-id render-fn))
+     (when-let [path (:path (reitit/match-by-name router route-name params))]
+       (state/set-tab-route! app-state* tab-id
+                             {:name         route-name
+                              :path         path
+                              :path-params  (or params {})
+                              :query-params (or query-params {})})))))
+
 (defn create-handler
   "Create a Ring handler for a hyper application.
 
