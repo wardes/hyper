@@ -8,6 +8,7 @@
             [hyper.actions :as actions]
             [hyper.brotli :as br]
             [hyper.context :as context]
+            [hyper.controllers :as controllers]
             [hyper.render :as render]
             [hyper.routes :as routes]
             [hyper.state :as state]
@@ -180,6 +181,7 @@
   (when-let [stop! (get-in @app-state* [:tabs tab-id :renderer :stop!])]
     (stop!))
   (actions/cleanup-tab-actions! app-state* tab-id)
+  (controllers/stop-all! app-state* tab-id)
   (state/cleanup-tab! app-state* tab-id)
   nil)
 
@@ -212,7 +214,13 @@
                                                                  (filter var?))]
                                               (watch/watch-source! app-state* tab-id trigger-render! source)))
                                           ;; Set up route-level watches (:watches + Var :get handlers)
-                                          (watch/setup-route-watches! app-state* tab-id trigger-render!)))
+                                          (watch/setup-route-watches! app-state* tab-id trigger-render!)
+                                          ;; Initial controller evaluation — the route-change watcher
+                                          ;; below only fires on subsequent changes, so the first
+                                          ;; evaluation for the tab's starting route runs explicitly.
+                                          (controllers/run-controllers! app-state* session-id tab-id
+                                                                        (get-in @app-state* [:tabs tab-id :route])
+                                                                        (:controllers @app-state*))))
 
                             :on-close (fn [_channel _status]
                                         (t/log! {:level :info
@@ -498,12 +506,14 @@
    - :watches           Vector of Watchable sources added to every page route.
                         Useful for top-level atoms that should trigger a re-render
                         on any page (e.g. a global config or feature-flags atom).
+   - :controllers       Vector of controller maps (or Vars), see hyper.controllers.
 
    Routes should use :get handlers that return hiccup (Chassis vectors).
    Hyper will wrap them to provide full HTML responses and SSE connections."
   ([routes app-state*]
    (create-handler routes app-state* {:datastar-script (default-datastar-script)}))
-  ([routes app-state* {:keys [watches head] :as opts}]
+  ([routes app-state* {:keys [watches head controllers] :as opts}]
+   (controllers/validate-controllers! controllers)
    (let [page-wrapper                             (page-handler app-state* opts)
          system-routes                            [["/hyper/events" {:get (sse-events-handler app-state*)}]
                                                    ["/hyper/actions" {:post (action-handler app-state*)}]
@@ -512,9 +522,11 @@
          ;; always read the latest route metadata, even between router rebuilds.
          ;; Store global :watches so find-route-watches can prepend them to
          ;; every page route's watch list. Auto-watch :head if it's a Var.
+         ;; Store :controllers (maps or Vars, resolved on every evaluation).
          _                                        (swap! app-state* assoc
                                                          :routes-source routes
                                                          :global-watches (vec watches)
+                                                         :controllers (vec controllers)
                                                          :head head)
          initial-routes                           (if (var? routes) @routes routes)
          initial-handler                          (build-ring-handler initial-routes app-state* page-wrapper system-routes)

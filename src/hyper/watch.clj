@@ -5,7 +5,8 @@
    external Watchable sources.  When a watched value changes the tab's
    `trigger-render!` callback is invoked, signalling the renderer thread
    to produce a fresh SSE frame."
-  (:require [hyper.protocols :as proto]
+  (:require [hyper.controllers :as controllers]
+            [hyper.protocols :as proto]
             [hyper.routes :as routes]))
 
 ;; ---------------------------------------------------------------------------
@@ -94,12 +95,17 @@
                  (let [route-changed? (let [old-route (get-in old-state route-path)
                                             new-route (get-in new-state route-path)]
                                         (and new-route (not= old-route new-route)))]
-                   ;; Swap route-level watches when navigating to a new named route
                    (when route-changed?
+                     ;; Swap route-level watches when navigating to a new named route
                      (let [old-name (get-in old-state (conj route-path :name))
                            new-name (get-in new-state (conj route-path :name))]
                        (when (not= old-name new-name)
-                         (setup-route-watches! app-state* tab-id trigger-render!))))
+                         (setup-route-watches! app-state* tab-id trigger-render!)))
+                     ;; Run controller :start/:stop transitions before the render below,
+                     ;; so the render already reflects any cursor resets from :start.
+                     (controllers/run-controllers! app-state* session-id tab-id
+                                                   (get-in new-state route-path)
+                                                   (:controllers new-state)))
                    ;; Re-render if any watched path changed
                    (when (or route-changed?
                              (not= (get-in old-state global-path)

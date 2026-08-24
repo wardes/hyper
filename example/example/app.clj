@@ -76,6 +76,7 @@
         [:p "These examples demonstrate " [:code "$value"] ", "
          [:code "$checked"] ", " [:code "$key"] ", and " [:code "$form-data"]
          " — client-side values transmitted to server actions."]
+        [:p.muted "The text input below is reset by a controller every time you navigate here."]
 
         ;; $value — text input
         (card "$value — Text Input"
@@ -129,6 +130,19 @@
                  [:strong "Server received:"]
                  [:pre (pr-str @form*)]]))))))
 ;; ---------------------------------------------------------------------------
+;; Controllers
+;; ---------------------------------------------------------------------------
+;; Cursor defaults (e.g. `(h/tab-cursor :text "")`) only apply once, at
+;; construction time — navigating back to a page later won't reset a cursor
+;; that already has a value. A controller's :start runs on every entry to a
+;; route, so it's the place to do that reinitialization explicitly.
+
+(def forms-controller
+  {:id     :forms
+   :params (fn [route] (= (:name route) :forms))
+   :start  (fn [_] (reset! (h/tab-cursor :text) ""))})
+
+;; ---------------------------------------------------------------------------
 ;; Routes
 ;; ---------------------------------------------------------------------------
 
@@ -169,7 +183,10 @@
 ;; ---------------------------------------------------------------------------
 
 (def app
-  (h/start! (h/create-handler #'routes :head [styles]) {:port 4000}))
+  (h/start! (h/create-handler #'routes
+                              :head [styles]
+                              :controllers [#'forms-controller])
+           {:port 4000}))
 
 (comment
   (h/stop! app))

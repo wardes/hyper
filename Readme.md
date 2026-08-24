@@ -380,6 +380,72 @@ for things like a top-level config atom or feature-flags that affect every view:
 Global watches are combined with any per-route `:watches` — global sources come
 first, then route-specific ones.
 
+## Controllers
+
+Controllers are Hyper's take on [kee-frame](https://github.com/ingesolvoll/kee-frame)'s
+controller model: a place to run page-level housekeeping — resetting a search
+cursor, kicking off a subscription — that runs exactly when a route becomes
+active, and exactly once when its parameters change.
+
+A controller is a plain map:
+
+```clojure
+(def league-controller
+  {:id     :league
+   :params (fn [route]
+             (when (= (:name route) :league)
+               (get-in route [:path-params :id])))
+   :start  (fn [id] (reset! (h/tab-cursor :league-id) id))
+   :stop   (fn [_id] (reset! (h/tab-cursor :search) ""))})
+```
+
+Pass controllers to `create-handler` via `:controllers`:
+
+```clojure
+(def handler
+  (h/create-handler #'routes :controllers [#'league-controller]))
+```
+
+`:id` and `:params` and `:start` are required; `:stop` is optional. `:id`
+identifies the controller (used to key its stored state, and in error logs)
+— it must be unique across all registered controllers.
+
+### How it runs
+
+`:params` is called with the tab's current route (the same shape as
+`:hyper/route` — `:name`, `:path`, `:path-params`, `:query-params`) every
+time the route changes, including query-param-only changes (e.g. from a
+`path-cursor` write) — not just full navigations. Its return value is
+compared against the value it returned last time:
+
+| Previous | Current | Result |
+|----------|---------|--------|
+| same     | same    | nothing happens |
+| `nil`    | value   | `:start` is called with the value |
+| value    | `nil`   | `:stop` is called with the old value |
+| value    | different value | `:stop` then `:start` |
+
+Because `:params` returns `nil` for routes it doesn't apply to, one
+controller can span several routes (staying started as you move between
+them) while stopping cleanly once you navigate elsewhere.
+
+`:start`/`:stop` run synchronously, before the resulting re-render, with the
+same cursor access as actions — so a `reset!` inside `:start` is reflected
+in the very next frame the browser sees. This is the direct answer to
+"cursors only apply their default value once": since cursor defaults are
+only applied at construction time, call `reset!` explicitly in `:start`
+whenever a page needs to reinitialize state on (re)entry.
+
+If a controller is still active when its tab disconnects, `:stop` is called
+as part of teardown so any resources it holds aren't leaked.
+
+Errors in `:params`/`:start`/`:stop` are caught and logged per-controller —
+one broken controller doesn't block others or stop rendering.
+
+Like routes, controller entries in the `:controllers` vector can be Vars
+(`#'league-controller`) instead of plain maps, so redefining a controller's
+logic at the REPL takes effect on the next route change without a restart.
+
 ## Assets and `<head>` injection
 
 Hyper doesn’t ship with an asset pipeline (Tailwind, Vite, etc.), but it *does*

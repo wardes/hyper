@@ -289,6 +289,12 @@
    - :watches           — Vector of Watchable sources added to every page route.
                           Useful for top-level atoms that should trigger a re-render
                           on any page (e.g. a global config or feature-flags atom).
+   - :controllers       — Vector of controller maps (or Vars holding controller
+                          maps, for REPL live-reload), each shaped
+                          {:id :params :start :stop}. :params derives a value
+                          from the current route; :start/:stop fire on the
+                          standard nil-transition rules whenever that value
+                          changes. See hyper.controllers for details.
 
    Example:
      (def routes
@@ -315,7 +321,7 @@
      (def app (start! handler {:port 3000}))
      ;; Later...
      (stop! app)"
-  [routes & {:keys [app-state head static-resources static-dir watches datastar-script]
+  [routes & {:keys [app-state head static-resources static-dir watches controllers datastar-script]
              :or   {app-state       (atom (state/init-state))
                     datastar-script server/default-datastar-script}}]
   (server/create-handler routes app-state
@@ -323,7 +329,8 @@
                           :datastar-script  datastar-script
                           :static-resources static-resources
                           :static-dir       static-dir
-                          :watches          watches}))
+                          :watches          watches
+                          :controllers      controllers}))
 
 (defn start!
   "Start the hyper application server.
